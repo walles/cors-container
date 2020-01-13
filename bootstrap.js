@@ -9,25 +9,31 @@ const ResponseBuilder = require('./app/ResponseBuilder');
 module.exports = app => {
     app.get('/*', (req, res) => {
         const responseBuilder = new ResponseBuilder(res);
-        
+
         const requestedUrl = req.url.slice(1);
         const corsBaseUrl = '//' + req.get('host');
-        
+
         console.info(req.protocol + '://' + req.get('host') + req.url);
-        
+
         if(requestedUrl == ''){
             res.send(index);
             return;
         }
 
+        let headers = Object.assign({}, req.headers);
+
+        // This prevents "Error [ERR_TLS_CERT_ALTNAME_INVALID]: Hostname/IP does not match certificate's altnames: Host: localhost"
+        delete headers.host;
+
+        // This prevents "Received response with content-encoding: gzip, but failed to decode it"
+        delete headers['accept-encoding'];
+
         request({
             uri: requestedUrl,
             resolveWithFullResponse: true,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.2564.116 Safari/537.36'
-            }
+            headers: headers,
         })
-        .then(originResponse => {            
+        .then(originResponse => {
             responseBuilder
                 .addHeaderByKeyValue('Access-Control-Allow-Origin', '*')
                 .addHeaderByKeyValue('Access-Control-Allow-Credentials', false)
@@ -39,9 +45,9 @@ module.exports = app => {
                     converter
                         .convert(originResponse.body, requestedUrl)
                         .replace(requestedUrl, corsBaseUrl + '/' + requestedUrl)
-                ); 
+                );
             }else{
-                res.send(originResponse.body);                
+                res.send(originResponse.body);
             }
         })
         .catch(originResponse => {
@@ -53,7 +59,7 @@ module.exports = app => {
                 .build(originResponse.headers);
 
             res.status(originResponse.statusCode || 500);
-            
+
             return res.send(originResponse.message);
         });
     });
