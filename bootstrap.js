@@ -7,13 +7,13 @@ const index = fs.readFileSync('index.html', 'utf8');
 const ResponseBuilder = require('./app/ResponseBuilder');
 
 module.exports = app => {
-    app.get('/*', (req, res) => {
+    app.all('/*', (req, res) => {
         const responseBuilder = new ResponseBuilder(res);
 
         const requestedUrl = req.url.slice(1);
         const corsBaseUrl = '//' + req.get('host');
 
-        console.info(req.protocol + '://' + req.get('host') + req.url);
+        console.info(req.method + ' ' + req.protocol + '://' + req.get('host') + req.url);
 
         if(requestedUrl == ''){
             res.send(index);
@@ -29,38 +29,39 @@ module.exports = app => {
         delete headers['accept-encoding'];
 
         request({
+            method: req.method,
             uri: requestedUrl,
             resolveWithFullResponse: true,
             headers: headers,
+            simple: false,  // Don't catch() unsuccessful HTTP response codes
         })
         .then(originResponse => {
             responseBuilder
                 .addHeaderByKeyValue('Access-Control-Allow-Origin', '*')
                 .addHeaderByKeyValue('Access-Control-Allow-Credentials', false)
-                .addHeaderByKeyValue('Access-Control-Allow-Headers', 'Content-Type')
+                .addHeaderByKeyValue('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
                 .addHeaderByKeyValue('X-Proxied-By', 'cors-container')
                 .build(originResponse.headers);
             if(req.headers['rewrite-urls']){
-                res.send(
+                res.status(originResponse.statusCode).send(
                     converter
                         .convert(originResponse.body, requestedUrl)
                         .replace(requestedUrl, corsBaseUrl + '/' + requestedUrl)
                 );
             }else{
-                res.send(originResponse.body);
+                res.status(originResponse.statusCode).send(originResponse.body);
             }
         })
-        .catch(originResponse => {
+        .catch(reason => {
+            console.error(reason);
             responseBuilder
                 .addHeaderByKeyValue('Access-Control-Allow-Origin', '*')
                 .addHeaderByKeyValue('Access-Control-Allow-Credentials', false)
                 .addHeaderByKeyValue('Access-Control-Allow-Headers', 'Content-Type')
-                .addHeaderByKeyValue('X-Proxied-By', 'cors-containermeh')
-                .build(originResponse.headers);
+                .addHeaderByKeyValue('X-Proxied-By', 'cors-container')
+                .build({});
 
-            res.status(originResponse.statusCode || 500);
-
-            return res.send(originResponse.message);
+            return res.status(500).send("CORS Proxy Failed");
         });
     });
 };
